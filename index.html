@@ -231,8 +231,10 @@
       document.getElementById('studentModal').style.display = 'none';
     }
 
-    function exportToExcel() {
-      let table = document.getElementById('studentTable');
-      let html = table.outerHTML.replace(/ /g, '%20');
-      let uri = 'data:application/vnd.ms-excel,' + html;
-     
+   function exportToExcel() {
+  let table = document.getElementById('studentTable');
+  let html = table.outerHTML.replace(/ /g, '%20');
+  let uri = 'data:application/vnd.ms-excel,' + html;
+  window.open(uri); // Dodaj ovu liniju da ne bude prekinuto!
+}
+
