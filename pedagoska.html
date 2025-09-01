@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pedagoška Sveska</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.0.0/firebase-database.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f5f7fa;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+    header, nav, footer {
+      text-align: center;
+      padding: 15px;
+    }
+    header {
+      background-color: #2c3e50;
+      color: white;
+      font-size: 24px;
+    }
+    nav {
+      background-color: #34495e;
+    }
+    nav a {
+      color: white;
+      margin: 0 10px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    main {
+      padding: 20px;
+      display: none;
+    }
+    input, button {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      width: 100%;
+      max-width: 400px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background-color: white;
+    }
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+    }
+    th {
+      background-color: #ecf0f1;
+    }
+    #studentModal {
+      display: none;
+      position: fixed;
+      top: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+      z-index: 1000;
+    }
+    .dark-mode {
+      background-color: #1e1e1e;
+      color: #eee;
+    }
+    .dark-mode table {
+      background-color: #2c2c2c;
+    }
+    .dark-mode th {
+      background-color: #444;
+    }
+    #loginDiv {
+      padding: 30px;
+      text-align: center;
+    }
+    canvas {
+      margin-top: 30px;
+      max-width: 600px;
+    }
+  </style>
+</head>
+<body>
+  <header>📚 Pedagoška Sveska</header>
+  <nav>
+    <a href="#">Učenici</a>
+    <a href="#">Izveštaji</a>
+    <a href="#">Podešavanja</a>
+  </nav>
+
+  <div id="loginDiv">
+    <h2>🔐 Prijava</h2>
+    <input type="text" id="username" placeholder="Korisničko ime">
+    <input type="password" id="password" placeholder="Lozinka">
+    <button onclick="login()">Prijavi se</button>
+  </div>
+
+  <main>
+    <input type="file" id="csvFile" accept=".csv">
+    <input type="text" id="searchInput" placeholder="🔍 Pretraži po imenu ili proseku...">
+    <button onclick="exportToExcel()">📥 Exportuj u Excel</button>
+    <button onclick="toggleDarkMode()">🌗 Tamni režim</button>
+    <button onclick="snimiUcenike()">💾 Snimi u Firebase</button>
+
+    <table id="studentTable">
+      <thead>
+        <tr>
+          <th>Ime</th>
+          <th>Prezime</th>
+          <th>Razred</th>
+          <th>Ocene</th>
+          <th>Prosek</th>
+          <th>Napomena</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <canvas id="prosekChart"></canvas>
+  </main>
+
+  <div id="studentModal">
+    <h3 id="modalIme"></h3>
+    <p><strong>Razred:</strong> <span id="modalRazred"></span></p>
+    <p><strong>Ocene:</strong> <span id="modalOcene"></span></p>
+    <p><strong>Prosek:</strong> <span id="modalProsek"></span></p>
+    <p><strong>Napomena:</strong> <span id="modalNapomena"></span></p>
+    <button onclick="zatvoriModal()">Zatvori</button>
+  </div>
+
+  <footer>
+    © 2025 Pedagoška Sveska | Verzija 1.0 | nastavnik@skola.rs
+  </footer>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "SENDER_ID",
+      appId: "APP_ID"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let students = [];
+
+    function login() {
+      const user = document.getElementById('username').value;
+      const pass = document.getElementById('password').value;
+      if (user === 'nastavnik' && pass === 'tajna123') {
+        document.getElementById('loginDiv').style.display = 'none';
+        document.querySelector('main').style.display = 'block';
+      } else {
+        alert('Pogrešni podaci');
+      }
+    }
+
+    document.getElementById('csvFile').addEventListener('change', function (e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const lines = e.target.result.trim().split('\n');
+        students = lines.slice(1).map(line => {
+          const values = line.split(',');
+          const ocene = values.slice(3, 6).map(Number);
+          const prosek = (ocene.reduce((a, b) => a + b, 0) / ocene.length).toFixed(2);
+          return {
+            ime: values[0].trim(),
+            prezime: values[1].trim(),
+            razred: values[2].trim(),
+            ocene,
+            prosek,
+            napomena: values[6] ? values[6].trim() : ''
+          };
+        });
+        prikaziTabelu();
+        prikaziGrafikon();
+      };
+      reader.readAsText(file);
+    });
+
+    function prikaziTabelu() {
+      const tbody = document.querySelector('#studentTable tbody');
+      tbody.innerHTML = '';
+      students.forEach(s => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${s.ime}</td>
+          <td>${s.prezime}</td>
+          <td>${s.razred}</td>
+          <td>${s.ocene.join(', ')}</td>
+          <td>${s.prosek}</td>
+          <td>${s.napomena}</td>
+        `;
+        row.onclick = () => prikaziDetalje(s);
+        tbody.appendChild(row);
+      });
+    }
+
+    document.getElementById('searchInput').addEventListener('input', function () {
+      const query = this.value.toLowerCase();
+      document.querySelectorAll('#studentTable tbody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
+      });
+    });
+
+    function prikaziDetalje(student) {
+      document.getElementById('modalIme').textContent = student.ime + ' ' + student.prezime;
+      document.getElementById('modalRazred').textContent = student.razred;
+      document.getElementById('modalOcene').textContent = student.ocene.join(', ');
+      document.getElementById('modalProsek').textContent = student.prosek;
+      document.getElementById('modalNapomena').textContent = student.napomena;
+      document.getElementById('studentModal').style.display = 'block';
+    }
+
+    function zatvoriModal() {
+      document.getElementById('studentModal').style.display = 'none';
+    }
+
+    function exportToExcel() {
+      let table = document.getElementById('studentTable');
+      let html = table.outerHTML.replace(/ /g, '%20');
+      let uri = 'data:application/vnd.ms-excel,' + html;
+      let link =
